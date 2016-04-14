@@ -53,11 +53,9 @@ __weak int board_mmc_getcd(struct mmc *mmc)
 int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
 {
 	int ret;
-
 #ifdef CONFIG_MMC_TRACE
 	int i;
 	u8 *ptr;
-
 	printf("CMD_SEND:%d\n", cmd->cmdidx);
 	printf("\t\tARG\t\t\t 0x%08X\n", cmd->cmdarg);
 	ret = mmc->cfg->ops->send_cmd(mmc, cmd, data);
@@ -106,10 +104,12 @@ int mmc_send_cmd(struct mmc *mmc, struct mmc_cmd *cmd, struct mmc_data *data)
 			break;
 		}
 	}
+	return ret;
 #else
 	ret = mmc->cfg->ops->send_cmd(mmc, cmd, data);
-#endif
 	return ret;
+#endif
+
 }
 
 int mmc_send_status(struct mmc *mmc, int timeout)
@@ -1965,3 +1965,138 @@ int mmc_set_rst_n_function(struct mmc *mmc, u8 enable)
 			  enable);
 }
 #endif
+int mmc_passwd_get_status(struct mmc *mmc, unsigned int *status)
+{
+	struct mmc_cmd cmd;
+
+       int err = -1;
+
+	if (NULL == status)
+		return err;
+
+	cmd.cmdidx = MMC_CMD_SEND_STATUS;
+	cmd.resp_type = MMC_RSP_R1;
+	cmd.cmdarg = mmc->rca << 16;
+	//cmd.flags = 0;
+
+	err = mmc_send_cmd(mmc, &cmd, NULL);
+    if (err)
+		return err;
+    else
+        *status = cmd.response[0];    
+
+    return 0;
+}
+int mmc_passwd(int action, struct mmc *mmc, const char *cur_passwd, const char *new_passwd)
+{
+	struct mmc_cmd cmd;
+	struct mmc_data data;
+    struct mmc_passwd mmc_passwd_data;
+
+    int cur_len = 0;
+    int new_len = 0;
+    int len = 0;
+    int tmp_len = 0;
+	int err;
+    unsigned int status = 0;
+
+    memset(&mmc_passwd_data, 0x00, sizeof(mmc_passwd_data));
+
+    cur_len = cur_passwd != NULL ? strlen(cur_passwd) : 0; 
+    new_len = new_passwd != NULL ? strlen(new_passwd) : 0; 
+
+    printf("current passwd len=%d\n", cur_len);
+    printf("current password is <%s>\n", cur_passwd);
+    printf("new passwd len=%d\n", new_len);
+    printf("new password is <%s>\n", new_passwd);
+    if ((NULL == cur_passwd) && (ERASE_ALL != action))
+		return -1;
+
+    len = 2 + cur_len + new_len;
+
+    switch (action) {
+    	case SET_PASSWD:
+		mmc_passwd_data.cmd = 0x01;
+        mmc_passwd_data.pwds_len = (unsigned char)(cur_len + new_len); 
+		strncpy(mmc_passwd_data.passwd, cur_passwd, cur_len);
+		if (NULL != new_passwd) {
+			strncpy((mmc_passwd_data.passwd + cur_len), new_passwd, new_len);
+		}
+		printf("new passwd=%s, cur passwd=%s, passwd=%s\n", new_passwd, cur_passwd, mmc_passwd_data.passwd);
+        break;
+	case LOCK:
+		mmc_passwd_data.cmd = 0x04;
+        mmc_passwd_data.pwds_len = (unsigned char)(cur_len); 
+		strncpy(mmc_passwd_data.passwd, cur_passwd, cur_len);
+	    break;
+	case UNLOCK:
+		mmc_passwd_data.cmd = 0x00;
+        mmc_passwd_data.pwds_len = (unsigned char)(cur_len); 
+		strncpy(mmc_passwd_data.passwd, cur_passwd, cur_len);
+	    break;
+	case CLR_PASSWD:
+		mmc_passwd_data.cmd = 0x02;
+        mmc_passwd_data.pwds_len = (unsigned char)(cur_len); 
+		strncpy(mmc_passwd_data.passwd, cur_passwd, cur_len);
+	    break;
+	case ERASE_ALL:
+		mmc_passwd_data.cmd = 0x08;
+	    break;
+	default:
+	    return -1;
+	}
+
+    printf("len is %d\n", len);
+	printf("passwd:%s\n", mmc_passwd_data.passwd);
+
+	tmp_len = ((len + 0x3) & (~0x3)) - len; /* 4 byte algin */
+    printf("tmp len=%d\n", tmp_len);
+	memset((mmc_passwd_data.passwd + cur_len + new_len), 0x00, tmp_len);
+    printf("len=%d\n", len);
+    printf("passwd=%s\n", mmc_passwd_data.passwd);
+    mmc_set_blocklen(mmc, len);
+
+	cmd.cmdidx = MMC_CMD_LOCK_UNLOCK;
+	cmd.resp_type = MMC_RSP_R1b;
+	cmd.cmdarg = 0;
+	//cmd.flags = 0;
+
+	//data.dest = (*char) mmc_passwd_data.passwd;
+	data.dest = (char *)&mmc_passwd_data;
+	data.blocksize = len;
+	data.blocks = 1;
+	data.flags = MMC_DATA_WRITE;
+
+    err = mmc_send_cmd(mmc, &cmd, &data);
+    if (err)
+        return err;
+
+    err = mmc_passwd_get_status(mmc, &status);
+    if (err)
+        return err;
+    printf("ACTION %d, response is 0x%08X\n", action, status);
+
+    if (status & CARD_IS_LOCKED) {
+        printf("Card is locked!\n");
+    } else {
+        printf("Card is unlocked!\n");
+    }
+
+    if (status & LOCK_UNLOCK_FAILED) {
+       printf("ACTION <%d> error is \n error %d", action,err);
+       return -2;
+    }
+#if 0 /* we do not need change passwd,so do not need code below. */
+    if (action == SET_PASSWD) {
+		if( NULL != new_passwd)
+			err = set_bsp_passwd(mmc_passwd_data.passwd + cur_len);
+		else
+			err = set_bsp_passwd(mmc_passwd_data.passwd);
+	}
+#endif
+
+    if (err)
+        return err;
+
+    return 0;
+}

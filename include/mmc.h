@@ -95,6 +95,11 @@
 #define MMC_CMD_APP_CMD			55
 #define MMC_CMD_SPI_READ_OCR		58
 #define MMC_CMD_SPI_CRC_ON_OFF		59
+
+#define MMC_SET_PASSWD_MAX_LEN 16  //max set password len
+
+#define MMC_CMD_LOCK_UNLOCK     42
+
 #define MMC_CMD_RES_MAN			62
 
 #define MMC_CMD62_ARG1			0xefac62ec
@@ -259,7 +264,35 @@
 #define MMCPART_NOAVAILABLE	(0xff)
 #define PART_ACCESS_MASK	(0x7)
 #define PART_SUPPORT		(0x1)
+
+#define SET_PASSWD    1
+#define LOCK          2
+#define UNLOCK        3
+#define CLR_PASSWD    4
+#define ERASE_ALL     5
+#define MAX_PASSWD_LEN   32 // old max(16 bytes) + new max(16 bytes) = 32 bytes
+
+#define CARD_IS_LOCKED   (1 << 25)
+#define LOCK_UNLOCK_FAILED  (1 << 24)
+
+#define NO_ERROR                   (0)
+#define ERROR_GET_BSP_PASSWD       (-1)
+#define ERROR_MMC_FIRST_INIT       (-2)
+#define ERROR_MMC_SECOND_INIT      (-3)
+#define ERROR_MMC_GET_STATUS       (-4)
+#define ERROR_MMC_UNLOCK           (-5)
+#define ERROR_MMC_SET_PASSWD       (-6)
+struct mmc_passwd {
+	unsigned char cmd;
+    unsigned char pwds_len;
+    char passwd[MAX_PASSWD_LEN];
+};
+
+
+
+
 #define ENHNCD_SUPPORT		(0x2)
+
 #define PART_ENH_ATTRIB		(0x1f)
 
 /* Maximum block size for MMC */
@@ -416,6 +449,16 @@ int mmc_set_dev(int dev_num);
 void print_mmc_devices(char separator);
 int get_mmc_num(void);
 int mmc_switch_part(int dev_num, unsigned int part_num);
+
+int mmc_passwd_get_status(struct mmc *mmc, unsigned int *status);
+int mmc_passwd(int action, struct mmc *mmc, const char *cur_passwd, const char *new_passwd);
+extern int set_bsp_passwd(char *passwd);
+extern int get_bsp_address(unsigned long* addr, unsigned long* otheraddr);
+extern int mmc_unlock(struct mmc *mmc);
+
+
+
+
 int mmc_hwpart_config(struct mmc *mmc, const struct mmc_hwpart_conf *conf,
 		      enum mmc_hwpart_conf_mode mode);
 int mmc_getcd(struct mmc *mmc);

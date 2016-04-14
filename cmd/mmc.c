@@ -15,6 +15,8 @@ static int curr_device = -1;
 int do_mmc (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	int dev;
+       
+        printf("here am i");
 
 	if (argc < 2)
 		return CMD_RET_USAGE;
@@ -787,11 +789,60 @@ static int do_mmc_setdsr(cmd_tbl_t *cmdtp, int flag,
 	return ret;
 }
 
+static int do_mmc_ul(cmd_tbl_t *cmdtp, int flag,
+			 int argc, char * const argv[])
+{
+	int dev = -1;
+	struct mmc *mmc;
+        int action = 0;
+        int err = 0;
+        printf("unlocking!   %s\n\n",argv[1]);
+	char password[MMC_SET_PASSWD_MAX_LEN + 1];
+
+	if (strcmp(argv[1], "-s") == 0)
+            action = SET_PASSWD;
+        else if (strcmp(argv[1], "-l") == 0)
+            action = LOCK;
+        else if (strcmp(argv[1], "-u") == 0)
+            action = UNLOCK;
+        else if (strcmp(argv[1], "-c") == 0)
+            action = CLR_PASSWD;
+        else if (strcmp(argv[1], "-e") == 0)
+            action = ERASE_ALL;
+        else 
+	    return CMD_RET_USAGE;
+        printf("near the end  ... %s ",argv[2]);
+	dev = (int)simple_strtoul(argv[2], NULL, 10);
+	mmc = find_mmc_device(dev);
+
+	if (!mmc) {
+		printf("no mmc device at slot %x\n", dev);
+		return CMD_RET_FAILURE;
+	}
+
+	mmc_init(mmc);
+	memset(password, 0x00, sizeof(password));
+        if (CLR_PASSWD == action ) {
+            err = mmc_passwd(action, mmc, password, argv[4]);
+	} 
+	else {
+            err = mmc_passwd(action, mmc, argv[3], argv[4]);
+	}
+        
+        if (0 != err)
+	    printf("action %s error, err no is <%d>\n",argv[2], err);
+        
+        return CMD_RET_SUCCESS; //success
+
+}
+
+
 static cmd_tbl_t cmd_mmc[] = {
 	U_BOOT_CMD_MKENT(info, 1, 0, do_mmcinfo, "", ""),
 	U_BOOT_CMD_MKENT(read, 4, 1, do_mmc_read, "", ""),
 	U_BOOT_CMD_MKENT(write, 4, 0, do_mmc_write, "", ""),
 	U_BOOT_CMD_MKENT(erase, 3, 0, do_mmc_erase, "", ""),
+	U_BOOT_CMD_MKENT(ul, 10, 1, do_mmc_ul, "", ""),
 	U_BOOT_CMD_MKENT(rescan, 1, 1, do_mmc_rescan, "", ""),
 	U_BOOT_CMD_MKENT(part, 1, 1, do_mmc_part, "", ""),
 	U_BOOT_CMD_MKENT(dev, 3, 0, do_mmc_dev, "", ""),
@@ -813,16 +864,23 @@ static int do_mmcops(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	cmd_tbl_t *cp;
 
+	//printf("finding command %s\n\n",argv[1]);
 	cp = find_cmd_tbl(argv[1], cmd_mmc, ARRAY_SIZE(cmd_mmc));
 
 	/* Drop the mmc command */
 	argc--;
 	argv++;
 
-	if (cp == NULL || argc > cp->maxargs)
+	if (cp == NULL ){
+	//if (cp == NULL || argc > cp->maxargs){
+		
+                //printf("cmd not found !!!.. %d, %d\n\n", cp->maxargs, argc);
 		return CMD_RET_USAGE;
-	if (flag == CMD_FLAG_REPEAT && !cp->repeatable)
+
+	}
+	if (flag == CMD_FLAG_REPEAT && !cp->repeatable){
 		return CMD_RET_SUCCESS;
+	}
 
 	if (curr_device < 0) {
 		if (get_mmc_num() > 0) {
@@ -843,6 +901,7 @@ U_BOOT_CMD(
 	"mmc write addr blk# cnt\n"
 	"mmc erase blk# cnt\n"
 	"mmc rescan\n"
+	"mmc ul unlock-lock sd cards CMD42\n"
 	"mmc part - lists available partition on current mmc device\n"
 	"mmc dev [dev] [part] - show or set current mmc device [partition]\n"
 	"mmc list - lists available devices\n"
